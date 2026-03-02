@@ -117,8 +117,8 @@
 
     <!-- SCRIPT LOGIK SISTEM -->
     <script>
-        // PAUTAN APPS SCRIPT DITANAM DI SINI
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby8a5t5YXn4lpuKu16pzGyD1K7n2JLZkDIaT5_qg1-wOTKClZUqWYqodoBfdjnCQMBM/exec';
+        // PAUTAN APPS SCRIPT YANG BARU DITANAM DI SINI
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby_NXu_oUX4PcbXRnZzMVWaW2ZSeP589nRvQVlGusxkoQFFNtNAVC_qfCe1XFOHy6bO/exec';
         
         let appData = [];
 
@@ -148,8 +148,9 @@
             // Buang perkataan 'No. Kad:' sekiranya ada
             let cleaned = kadString.replace(/No\.?\s*Kad:?/gi, '').trim();
             
-            // Buang nombor awalan (seperti "1," atau "1 ") di hadapan nombor kad sebenar
-            cleaned = cleaned.replace(/^\d+[\s,]+/, '');
+            // Membuang nombor lajur yang tidak berkaitan seperti "1, 58" atau "1 58" menjadi "58"
+            cleaned = cleaned.replace(/^\d+\s*[,\|]\s*/, ''); 
+            cleaned = cleaned.replace(/^\d+\s+/, ''); 
             
             return cleaned.trim() || '-';
         }
