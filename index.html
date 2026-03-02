@@ -155,6 +155,19 @@
             return cleaned.trim() || '-';
         }
 
+        // --- Fungsi Untuk Format Lokasi Supaya Papar Satu Sahaja ---
+        function cleanLokasi(locString) {
+            if (!locString || locString === '-') return '-';
+            
+            // Pecahkan lokasi yang dipisahkan oleh koma
+            const parts = locString.split(',');
+            
+            // Ambil bahagian yang terakhir sahaja (Cth: "PEJABAT, STOR SUKAN" akan jadi "STOR SUKAN")
+            let lastPart = parts[parts.length - 1].trim();
+            
+            return lastPart || '-';
+        }
+
         // --- Teras Fetch Data dari Google Sheets ---
         async function fetchData(isBackground = false) {
             const btnSync = document.getElementById('btn-sync');
@@ -185,7 +198,7 @@
                     fileName: item.fileName || '-',
                     noKad: cleanNoKad(item.noKad), // Format nombor diaplikasikan di sini
                     itemName: item.itemName || '-',
-                    lokasi: item.lokasi || '-'
+                    lokasi: cleanLokasi(item.lokasi) // Format lokasi (1 lokasi) diaplikasikan di sini
                 }));
 
                 const timeStr = new Date().toLocaleTimeString();
