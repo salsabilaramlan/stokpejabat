@@ -1,0 +1,396 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { Upload, Search, FileText, Database, AlertCircle, Trash2, Link as LinkIcon, RefreshCw, Table2, Info, X } from 'lucide-react';
+
+export default function App() {
+  const [filesData, setFilesData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('script'); 
+  
+  // Pautan Web App (Google Apps Script) anda
+  const [scriptUrl, setScriptUrl] = useState('https://script.google.com/macros/s/AKfycby8a5t5YXn4lpuKu16pzGyD1K7n2JLZkDIaT5_qg1-wOTKClZUqWYqodoBfdjnCQMBM/exec');
+  const [lastSync, setLastSync] = useState(null);
+
+  // Sistem Modal/Mesej (Menggantikan alert dan confirm)
+  const [modal, setModal] = useState({ show: false, message: '', type: 'info', onConfirm: null });
+
+  const showMessage = (message, type = 'info', onConfirm = null) => {
+    setModal({ show: true, message, type, onConfirm });
+  };
+
+  const closeModal = () => setModal({ show: false, message: '', type: 'info', onConfirm: null });
+
+  // Tarik data secara automatik semasa aplikasi mula dibuka
+  useEffect(() => {
+    if (scriptUrl) {
+      fetchFromAppScript();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // FUNGSI 1: Memproses fail CSV yang dimuat naik secara manual
+  const handleFileUpload = async (e) => {
+    const selectedFiles = e.target.files;
+    if (!selectedFiles || selectedFiles.length === 0) return;
+
+    setLoading(true);
+
+    const filePromises = Array.from(selectedFiles).map(file => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const text = event.target.result;
+          const lines = text.split(/\r?\n/);
+          
+          let itemName = "";
+          let lokasi = "";
+          let noKad = "";
+          let isAsset = false;
+
+          const clean = (str) => 
+            str.split(',')
+               .map(s => s.replace(/^"|"$/g, '').trim())
+               .filter(s => s.length > 0)
+               .join(', ');
+
+          for (const line of lines) {
+            const upperLine = line.toUpperCase();
+            if (upperLine.includes('PERIHAL STOK:')) {
+              const perihalIdx = upperLine.indexOf('PERIHAL STOK:');
+              const lokasiIdx = upperLine.indexOf('LOKASI STOK:');
+              const kadIdx = upperLine.indexOf('NO. KAD:');
+
+              if (lokasiIdx > -1 && kadIdx > -1) {
+                itemName = clean(line.substring(perihalIdx + 13, lokasiIdx));
+                lokasi = clean(line.substring(lokasiIdx + 12, kadIdx));
+                noKad = clean(line.substring(kadIdx + 8));
+              } else if (lokasiIdx > -1) {
+                itemName = clean(line.substring(perihalIdx + 13, lokasiIdx));
+                lokasi = clean(line.substring(lokasiIdx + 12));
+              } else {
+                itemName = clean(line.substring(perihalIdx + 13));
+              }
+              break; 
+            } else if (upperLine.includes('PERIHAL ASET')) {
+              isAsset = true;
+              break;
+            }
+          }
+
+          if (itemName || isAsset) {
+            resolve({
+              id: `${file.name}-${Math.random().toString(36).substring(2, 9)}`,
+              fileName: file.name,
+              itemName: itemName || "Senarai Aset (Rujuk Fail)",
+              lokasi: lokasi || "-",
+              noKad: noKad || (isAsset ? "ASET" : "-"),
+              sumber: "Fail Tempatan"
+            });
+          } else {
+            resolve(null);
+          }
+        };
+        reader.onerror = () => resolve(null);
+        reader.readAsText(file);
+      });
+    });
+
+    const results = await Promise.all(filePromises);
+    const validResults = results.filter(r => r !== null);
+    
+    setFilesData(prev => {
+      const combined = [...prev, ...validResults];
+      return Array.from(new Map(combined.map(item => [item.fileName + item.noKad, item])).values());
+    });
+    
+    setLoading(false);
+  };
+
+  // FUNGSI 2: Tarik Data dari Apps Script
+  const fetchFromAppScript = async () => {
+    if (!scriptUrl) {
+      showMessage("Sila masukkan pautan Web App (Google Apps Script) terlebih dahulu.", "error");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const urlWithNoCache = `${scriptUrl}${scriptUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`;
+      const response = await fetch(urlWithNoCache);
+      
+      if (!response.ok) throw new Error("Gagal menyambung ke pautan.");
+      
+      const data = await response.json();
+      
+      if (!Array.isArray(data)) throw new Error("Format data tidak sah.");
+
+      const formattedData = data.map((item, index) => ({
+        id: `gas-${index}-${Math.random().toString(36).substring(2, 9)}`,
+        fileName: item.fileName,
+        noKad: item.noKad,
+        itemName: item.itemName,
+        lokasi: item.lokasi,
+        sumber: "Live Sheets"
+      }));
+
+      setFilesData(formattedData);
+      setLastSync(new Date().toLocaleTimeString());
+    } catch (error) {
+      console.error(error);
+      showMessage("Gagal memuat turun data. Pastikan pautan sah dan Apps Script ditetapkan kepada 'Anyone'.", "error");
+    }
+    setLoading(false);
+  };
+
+  const handleClearData = () => {
+    showMessage('Adakah anda pasti untuk memadam semua data dari paparan ini?', 'confirm', () => {
+      setFilesData([]);
+      setSearchTerm('');
+      setLastSync(null);
+    });
+  };
+
+  // Tapis data mengikut carian
+  const filteredData = useMemo(() => {
+    if (!searchTerm) return filesData;
+    const lowerSearch = searchTerm.toLowerCase();
+    return filesData.filter(item => 
+      item.itemName.toLowerCase().includes(lowerSearch) ||
+      item.noKad.toLowerCase().includes(lowerSearch) ||
+      item.lokasi.toLowerCase().includes(lowerSearch) ||
+      item.fileName.toLowerCase().includes(lowerSearch)
+    );
+  }, [filesData, searchTerm]);
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-4 md:p-8 relative">
+      
+      {/* Kotak Dialog / Modal UI */}
+      {modal.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm transition-opacity">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className={`p-4 border-b ${modal.type === 'error' ? 'bg-red-50 border-red-100 text-red-700' : 'bg-slate-50 border-slate-100 text-slate-700'} flex justify-between items-center`}>
+              <h3 className="font-bold flex items-center gap-2">
+                {modal.type === 'error' ? <AlertCircle size={20} /> : <Info size={20} />}
+                {modal.type === 'error' ? 'Ralat' : modal.type === 'confirm' ? 'Pengesahan' : 'Makluman'}
+              </h3>
+              <button onClick={closeModal} className="p-1 hover:bg-black/5 rounded-full transition-colors"><X size={18} /></button>
+            </div>
+            <div className="p-6 text-slate-600">
+              {modal.message}
+            </div>
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+              {modal.type === 'confirm' && (
+                <button onClick={closeModal} className="px-4 py-2 font-medium text-slate-600 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl transition-colors">Batal</button>
+              )}
+              <button
+                onClick={() => {
+                  if (modal.onConfirm) modal.onConfirm();
+                  closeModal();
+                }}
+                className={`px-5 py-2 font-medium text-white rounded-xl transition-colors ${modal.type === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+              >
+                {modal.type === 'confirm' ? 'Ya, Teruskan' : 'Tutup'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="max-w-6xl mx-auto space-y-6">
+        
+        {/* Header App */}
+        <header className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-10 text-center space-y-3">
+          <div className="inline-flex items-center justify-center p-4 bg-blue-50 text-blue-600 rounded-2xl mb-2">
+            <Database size={36} />
+          </div>
+          <h1 className="text-2xl md:text-4xl font-bold text-slate-900 tracking-tight">
+            Carian Kad Stok
+          </h1>
+          <p className="text-slate-500 max-w-2xl mx-auto text-sm md:text-base leading-relaxed">
+            Sistem carian pintar ini bersambung terus dengan Google Sheets anda untuk memaparkan rekod No. Kad dan Lokasi inventori secara *real-time*.
+          </p>
+        </header>
+
+        {/* Kawalan Tab */}
+        <div className="flex justify-center gap-2 p-1 bg-slate-200/50 backdrop-blur rounded-xl max-w-fit mx-auto">
+          <button 
+            onClick={() => setActiveTab('script')}
+            className={`flex items-center px-6 py-2.5 rounded-lg font-semibold text-sm transition-all ${activeTab === 'script' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}
+          >
+            <Table2 size={18} className="mr-2" /> Live Sheets
+          </button>
+          <button 
+            onClick={() => setActiveTab('upload')}
+            className={`flex items-center px-6 py-2.5 rounded-lg font-semibold text-sm transition-all ${activeTab === 'upload' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}
+          >
+            <FileText size={18} className="mr-2" /> Muat Naik Fail
+          </button>
+        </div>
+
+        {/* Bahagian Muat Naik / Script */}
+        <section className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+          {activeTab === 'script' ? (
+            <div className="p-6 md:p-8 space-y-6 bg-slate-50/50">
+              <div className="bg-blue-50 border border-blue-100/50 rounded-2xl p-5 flex gap-4 text-sm text-blue-900">
+                <Info className="shrink-0 text-blue-500 mt-0.5" size={22} />
+                <div>
+                  <p className="font-semibold mb-1 text-base">Pautan Google Sheets Disambung!</p>
+                  <p className="text-blue-700/80 leading-relaxed">
+                    Sistem ini akan menarik data secara automatik. Jika ada perubahan baharu di dalam Sheets, klik butang <strong>Segerak Data (Sync)</strong> di bawah.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col md:flex-row gap-3">
+                <div className="relative flex-grow">
+                  <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
+                    <LinkIcon className="w-5 h-5 text-slate-400" />
+                  </div>
+                  <input 
+                    type="url" 
+                    className="block w-full p-4 pl-12 text-sm text-slate-500 border border-slate-200 rounded-2xl bg-white shadow-sm focus:outline-none" 
+                    value={scriptUrl}
+                    readOnly
+                    onChange={(e) => setScriptUrl(e.target.value)}
+                  />
+                </div>
+                <button 
+                  onClick={fetchFromAppScript}
+                  disabled={loading}
+                  className="flex items-center justify-center px-8 py-4 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:bg-blue-400 text-white rounded-2xl font-semibold transition-all shadow-sm whitespace-nowrap"
+                >
+                  <RefreshCw size={18} className={`mr-2 ${loading ? 'animate-spin' : ''}`} />
+                  {loading ? 'Menyegerak...' : 'Segerak Data (Sync)'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="p-6 md:p-8 bg-slate-50/50">
+              <label 
+                htmlFor="csv-upload" 
+                className={`relative flex flex-col items-center justify-center w-full h-56 border-2 border-dashed rounded-3xl cursor-pointer transition-all ${loading ? 'bg-slate-100 border-slate-300' : 'bg-white border-blue-200 hover:bg-blue-50/50 hover:border-blue-400'}`}
+              >
+                <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
+                  <div className={`p-4 rounded-full mb-4 ${loading ? 'bg-slate-200 text-slate-400 animate-pulse' : 'bg-blue-100 text-blue-500'}`}>
+                    <Upload size={28} />
+                  </div>
+                  {loading ? (
+                    <p className="text-sm font-semibold text-slate-600">Memproses fail anda, sila tunggu...</p>
+                  ) : (
+                    <>
+                      <p className="mb-2 text-base font-bold text-slate-700">
+                        Klik untuk muat naik fail CSV tempatan
+                      </p>
+                      <p className="text-sm text-slate-500">
+                        Sesuai digunakan jika pautan *live* menghadapi masalah.
+                      </p>
+                    </>
+                  )}
+                </div>
+                <input 
+                  id="csv-upload" 
+                  type="file" 
+                  multiple 
+                  accept=".csv" 
+                  className="hidden" 
+                  onChange={handleFileUpload}
+                  disabled={loading}
+                />
+              </label>
+            </div>
+          )}
+          
+          {/* Status Bar */}
+          {filesData.length > 0 && (
+            <div className="bg-white border-t border-slate-200 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="flex items-center text-sm font-semibold text-emerald-700 bg-emerald-50 px-4 py-2 rounded-xl">
+                <Database size={16} className="mr-2 text-emerald-500" />
+                {filesData.length} Rekod Tersedia 
+                {lastSync && <span className="ml-2 font-normal text-emerald-600/70"> (Dikemaskini: {lastSync})</span>}
+              </div>
+              <button 
+                onClick={handleClearData}
+                className="text-sm flex items-center text-red-600 hover:text-red-700 font-semibold px-4 py-2 rounded-xl hover:bg-red-50 transition-colors"
+              >
+                <Trash2 size={16} className="mr-2" />
+                Padam Paparan
+              </button>
+            </div>
+          )}
+        </section>
+
+        {/* Bahagian Carian & Jadual */}
+        {filesData.length > 0 && (
+          <section className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="p-6 md:p-8 border-b border-slate-200 bg-white">
+              <div className="relative max-w-3xl mx-auto">
+                <div className="absolute inset-y-0 left-0 flex items-center pl-5 pointer-events-none">
+                  <Search className="w-5 h-5 text-slate-400" />
+                </div>
+                <input 
+                  type="text" 
+                  className="block w-full p-4 pl-14 text-base text-slate-900 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none" 
+                  placeholder="Cari nama item, no kad, atau lokasi..." 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th scope="col" className="px-6 py-5 font-bold w-28">No. Kad</th>
+                    <th scope="col" className="px-6 py-5 font-bold">Perihal Stok (Nama Item)</th>
+                    <th scope="col" className="px-6 py-5 font-bold w-48">Lokasi Stok</th>
+                    <th scope="col" className="px-6 py-5 font-bold w-48">Sheet / Rujukan</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredData.length > 0 ? (
+                    filteredData.map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-50/80 transition-colors group">
+                        <td className="px-6 py-4">
+                          <span className="inline-flex items-center justify-center px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-200/70 rounded-lg">
+                            {item.noKad}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 font-semibold text-blue-700 text-base">
+                          {item.itemName}
+                        </td>
+                        <td className="px-6 py-4 text-slate-600 font-medium">
+                          {item.lokasi}
+                        </td>
+                        <td className="px-6 py-4 text-slate-400 font-mono text-xs">
+                          {item.fileName}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="4" className="px-6 py-16 text-center">
+                        <div className="inline-flex items-center justify-center p-4 bg-slate-100 rounded-full mb-4">
+                          <AlertCircle className="w-8 h-8 text-slate-400" />
+                        </div>
+                        <p className="text-slate-600 font-medium text-lg">Tiada rekod ditemui</p>
+                        <p className="text-slate-400 mt-1">Cuba kata kunci yang lain untuk "{searchTerm}"</p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            
+            {/* Footer Jadual */}
+            <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 text-xs font-medium text-slate-500 text-center sm:text-right">
+              Menunjukkan {filteredData.length} daripada {filesData.length} item.
+            </div>
+          </section>
+        )}
+
+      </div>
+    </div>
+  );
+}
