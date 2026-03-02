@@ -1,396 +1,467 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { Upload, Search, FileText, Database, AlertCircle, Trash2, Link as LinkIcon, RefreshCw, Table2, Info, X } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Carian Kad Stok</title>
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 p-4 md:p-8 relative min-h-screen">
 
-export default function App() {
-  const [filesData, setFilesData] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('script'); 
-  
-  // Pautan Web App (Google Apps Script) anda
-  const [scriptUrl, setScriptUrl] = useState('https://script.google.com/macros/s/AKfycby8a5t5YXn4lpuKu16pzGyD1K7n2JLZkDIaT5_qg1-wOTKClZUqWYqodoBfdjnCQMBM/exec');
-  const [lastSync, setLastSync] = useState(null);
-
-  // Sistem Modal/Mesej (Menggantikan alert dan confirm)
-  const [modal, setModal] = useState({ show: false, message: '', type: 'info', onConfirm: null });
-
-  const showMessage = (message, type = 'info', onConfirm = null) => {
-    setModal({ show: true, message, type, onConfirm });
-  };
-
-  const closeModal = () => setModal({ show: false, message: '', type: 'info', onConfirm: null });
-
-  // Tarik data secara automatik semasa aplikasi mula dibuka
-  useEffect(() => {
-    if (scriptUrl) {
-      fetchFromAppScript();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // FUNGSI 1: Memproses fail CSV yang dimuat naik secara manual
-  const handleFileUpload = async (e) => {
-    const selectedFiles = e.target.files;
-    if (!selectedFiles || selectedFiles.length === 0) return;
-
-    setLoading(true);
-
-    const filePromises = Array.from(selectedFiles).map(file => {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const text = event.target.result;
-          const lines = text.split(/\r?\n/);
-          
-          let itemName = "";
-          let lokasi = "";
-          let noKad = "";
-          let isAsset = false;
-
-          const clean = (str) => 
-            str.split(',')
-               .map(s => s.replace(/^"|"$/g, '').trim())
-               .filter(s => s.length > 0)
-               .join(', ');
-
-          for (const line of lines) {
-            const upperLine = line.toUpperCase();
-            if (upperLine.includes('PERIHAL STOK:')) {
-              const perihalIdx = upperLine.indexOf('PERIHAL STOK:');
-              const lokasiIdx = upperLine.indexOf('LOKASI STOK:');
-              const kadIdx = upperLine.indexOf('NO. KAD:');
-
-              if (lokasiIdx > -1 && kadIdx > -1) {
-                itemName = clean(line.substring(perihalIdx + 13, lokasiIdx));
-                lokasi = clean(line.substring(lokasiIdx + 12, kadIdx));
-                noKad = clean(line.substring(kadIdx + 8));
-              } else if (lokasiIdx > -1) {
-                itemName = clean(line.substring(perihalIdx + 13, lokasiIdx));
-                lokasi = clean(line.substring(lokasiIdx + 12));
-              } else {
-                itemName = clean(line.substring(perihalIdx + 13));
-              }
-              break; 
-            } else if (upperLine.includes('PERIHAL ASET')) {
-              isAsset = true;
-              break;
-            }
-          }
-
-          if (itemName || isAsset) {
-            resolve({
-              id: `${file.name}-${Math.random().toString(36).substring(2, 9)}`,
-              fileName: file.name,
-              itemName: itemName || "Senarai Aset (Rujuk Fail)",
-              lokasi: lokasi || "-",
-              noKad: noKad || (isAsset ? "ASET" : "-"),
-              sumber: "Fail Tempatan"
-            });
-          } else {
-            resolve(null);
-          }
-        };
-        reader.onerror = () => resolve(null);
-        reader.readAsText(file);
-      });
-    });
-
-    const results = await Promise.all(filePromises);
-    const validResults = results.filter(r => r !== null);
-    
-    setFilesData(prev => {
-      const combined = [...prev, ...validResults];
-      return Array.from(new Map(combined.map(item => [item.fileName + item.noKad, item])).values());
-    });
-    
-    setLoading(false);
-  };
-
-  // FUNGSI 2: Tarik Data dari Apps Script
-  const fetchFromAppScript = async () => {
-    if (!scriptUrl) {
-      showMessage("Sila masukkan pautan Web App (Google Apps Script) terlebih dahulu.", "error");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const urlWithNoCache = `${scriptUrl}${scriptUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`;
-      const response = await fetch(urlWithNoCache);
-      
-      if (!response.ok) throw new Error("Gagal menyambung ke pautan.");
-      
-      const data = await response.json();
-      
-      if (!Array.isArray(data)) throw new Error("Format data tidak sah.");
-
-      const formattedData = data.map((item, index) => ({
-        id: `gas-${index}-${Math.random().toString(36).substring(2, 9)}`,
-        fileName: item.fileName,
-        noKad: item.noKad,
-        itemName: item.itemName,
-        lokasi: item.lokasi,
-        sumber: "Live Sheets"
-      }));
-
-      setFilesData(formattedData);
-      setLastSync(new Date().toLocaleTimeString());
-    } catch (error) {
-      console.error(error);
-      showMessage("Gagal memuat turun data. Pastikan pautan sah dan Apps Script ditetapkan kepada 'Anyone'.", "error");
-    }
-    setLoading(false);
-  };
-
-  const handleClearData = () => {
-    showMessage('Adakah anda pasti untuk memadam semua data dari paparan ini?', 'confirm', () => {
-      setFilesData([]);
-      setSearchTerm('');
-      setLastSync(null);
-    });
-  };
-
-  // Tapis data mengikut carian
-  const filteredData = useMemo(() => {
-    if (!searchTerm) return filesData;
-    const lowerSearch = searchTerm.toLowerCase();
-    return filesData.filter(item => 
-      item.itemName.toLowerCase().includes(lowerSearch) ||
-      item.noKad.toLowerCase().includes(lowerSearch) ||
-      item.lokasi.toLowerCase().includes(lowerSearch) ||
-      item.fileName.toLowerCase().includes(lowerSearch)
-    );
-  }, [filesData, searchTerm]);
-
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-4 md:p-8 relative">
-      
-      {/* Kotak Dialog / Modal UI */}
-      {modal.show && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm transition-opacity">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className={`p-4 border-b ${modal.type === 'error' ? 'bg-red-50 border-red-100 text-red-700' : 'bg-slate-50 border-slate-100 text-slate-700'} flex justify-between items-center`}>
-              <h3 className="font-bold flex items-center gap-2">
-                {modal.type === 'error' ? <AlertCircle size={20} /> : <Info size={20} />}
-                {modal.type === 'error' ? 'Ralat' : modal.type === 'confirm' ? 'Pengesahan' : 'Makluman'}
-              </h3>
-              <button onClick={closeModal} className="p-1 hover:bg-black/5 rounded-full transition-colors"><X size={18} /></button>
+    <!-- Sistem Modal UI (Pop-up) -->
+    <div id="sys-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden transform scale-100">
+            <div id="modal-header" class="p-4 border-b bg-slate-50 border-slate-100 text-slate-700 flex justify-between items-center">
+                <h3 class="font-bold flex items-center gap-2">
+                    <!-- Icon Info -->
+                    <svg id="modal-icon-info" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                    <!-- Icon Error -->
+                    <svg id="modal-icon-error" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden text-red-500"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <span id="modal-title">Makluman</span>
+                </h3>
+                <button onclick="document.getElementById('sys-modal').classList.add('hidden')" class="p-1 hover:bg-black/5 rounded-full transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
             </div>
-            <div className="p-6 text-slate-600">
-              {modal.message}
+            <div id="modal-desc" class="p-6 text-slate-600 leading-relaxed text-sm">
+                <!-- Message -->
             </div>
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-              {modal.type === 'confirm' && (
-                <button onClick={closeModal} className="px-4 py-2 font-medium text-slate-600 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl transition-colors">Batal</button>
-              )}
-              <button
-                onClick={() => {
-                  if (modal.onConfirm) modal.onConfirm();
-                  closeModal();
-                }}
-                className={`px-5 py-2 font-medium text-white rounded-xl transition-colors ${modal.type === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-              >
-                {modal.type === 'confirm' ? 'Ya, Teruskan' : 'Tutup'}
-              </button>
+            <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                <button id="modal-cancel" onclick="document.getElementById('sys-modal').classList.add('hidden')" class="hidden px-4 py-2 font-medium text-slate-600 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl transition-colors">Batal</button>
+                <button id="modal-confirm" class="px-5 py-2 font-medium text-white rounded-xl transition-colors bg-blue-600 hover:bg-blue-700">Tutup</button>
             </div>
-          </div>
         </div>
-      )}
+    </div>
 
-      <div className="max-w-6xl mx-auto space-y-6">
+    <!-- Main Container -->
+    <div class="max-w-6xl mx-auto space-y-6">
         
-        {/* Header App */}
-        <header className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-10 text-center space-y-3">
-          <div className="inline-flex items-center justify-center p-4 bg-blue-50 text-blue-600 rounded-2xl mb-2">
-            <Database size={36} />
-          </div>
-          <h1 className="text-2xl md:text-4xl font-bold text-slate-900 tracking-tight">
-            Carian Kad Stok
-          </h1>
-          <p className="text-slate-500 max-w-2xl mx-auto text-sm md:text-base leading-relaxed">
-            Sistem carian pintar ini bersambung terus dengan Google Sheets anda untuk memaparkan rekod No. Kad dan Lokasi inventori secara *real-time*.
-          </p>
+        <!-- Header -->
+        <header class="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-10 text-center space-y-3">
+            <div class="inline-flex items-center justify-center p-4 bg-blue-50 text-blue-600 rounded-2xl mb-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+            </div>
+            <h1 class="text-2xl md:text-4xl font-bold text-slate-900 tracking-tight">Carian Kad Stok</h1>
+            <p class="text-slate-500 max-w-2xl mx-auto text-sm md:text-base leading-relaxed">
+                Sistem carian pintar bersambung terus dengan Google Sheets anda untuk memaparkan rekod inventori secara <i>real-time</i>.
+            </p>
         </header>
 
-        {/* Kawalan Tab */}
-        <div className="flex justify-center gap-2 p-1 bg-slate-200/50 backdrop-blur rounded-xl max-w-fit mx-auto">
-          <button 
-            onClick={() => setActiveTab('script')}
-            className={`flex items-center px-6 py-2.5 rounded-lg font-semibold text-sm transition-all ${activeTab === 'script' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}
-          >
-            <Table2 size={18} className="mr-2" /> Live Sheets
-          </button>
-          <button 
-            onClick={() => setActiveTab('upload')}
-            className={`flex items-center px-6 py-2.5 rounded-lg font-semibold text-sm transition-all ${activeTab === 'upload' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}
-          >
-            <FileText size={18} className="mr-2" /> Muat Naik Fail
-          </button>
+        <!-- Kawalan Tab -->
+        <div class="flex justify-center gap-2 p-1 bg-slate-200/50 backdrop-blur rounded-xl max-w-fit mx-auto">
+            <button id="tab-script" onclick="switchTab('script')" class="flex items-center px-6 py-2.5 rounded-lg font-semibold text-sm transition-all bg-white text-blue-600 shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                Live Sheets
+            </button>
+            <button id="tab-upload" onclick="switchTab('upload')" class="flex items-center px-6 py-2.5 rounded-lg font-semibold text-sm transition-all text-slate-500 hover:text-slate-700 hover:bg-slate-200/50">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                Muat Naik Fail
+            </button>
         </div>
 
-        {/* Bahagian Muat Naik / Script */}
-        <section className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-          {activeTab === 'script' ? (
-            <div className="p-6 md:p-8 space-y-6 bg-slate-50/50">
-              <div className="bg-blue-50 border border-blue-100/50 rounded-2xl p-5 flex gap-4 text-sm text-blue-900">
-                <Info className="shrink-0 text-blue-500 mt-0.5" size={22} />
-                <div>
-                  <p className="font-semibold mb-1 text-base">Pautan Google Sheets Disambung!</p>
-                  <p className="text-blue-700/80 leading-relaxed">
-                    Sistem ini akan menarik data secara automatik. Jika ada perubahan baharu di dalam Sheets, klik butang <strong>Segerak Data (Sync)</strong> di bawah.
-                  </p>
+        <!-- Bahagian Kawalan Utama -->
+        <section class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+            
+            <!-- Bahagian Script -->
+            <div id="sec-script" class="p-6 md:p-8 space-y-6 bg-slate-50/50">
+                <div class="bg-blue-50 border border-blue-100/50 rounded-2xl p-5 flex gap-4 text-sm text-blue-900">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-blue-500 mt-0.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                    <div>
+                        <p class="font-semibold mb-1 text-base">Pautan Google Sheets Disambung!</p>
+                        <p class="text-blue-700/80 leading-relaxed">
+                            Sistem akan menarik data secara automatik. Jika ada perubahan baharu di dalam Sheets, klik butang <strong>Segerak Data (Sync)</strong>.
+                        </p>
+                    </div>
                 </div>
-              </div>
 
-              <div className="flex flex-col md:flex-row gap-3">
-                <div className="relative flex-grow">
-                  <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
-                    <LinkIcon className="w-5 h-5 text-slate-400" />
-                  </div>
-                  <input 
-                    type="url" 
-                    className="block w-full p-4 pl-12 text-sm text-slate-500 border border-slate-200 rounded-2xl bg-white shadow-sm focus:outline-none" 
-                    value={scriptUrl}
-                    readOnly
-                    onChange={(e) => setScriptUrl(e.target.value)}
-                  />
+                <div class="flex flex-col md:flex-row gap-3">
+                    <div class="relative flex-grow">
+                        <div class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                        </div>
+                        <input type="url" id="input-url" class="block w-full p-4 pl-12 text-sm text-slate-500 border border-slate-200 rounded-2xl bg-white shadow-sm focus:outline-none" value="https://script.google.com/macros/s/AKfycby8a5t5YXn4lpuKu16pzGyD1K7n2JLZkDIaT5_qg1-wOTKClZUqWYqodoBfdjnCQMBM/exec" readonly>
+                    </div>
+                    <button id="btn-sync" onclick="fetchData()" class="flex items-center justify-center px-8 py-4 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white rounded-2xl font-semibold transition-all shadow-sm whitespace-nowrap">
+                        <svg id="icon-sync" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                        <span id="text-sync">Segerak Data (Sync)</span>
+                    </button>
                 </div>
-                <button 
-                  onClick={fetchFromAppScript}
-                  disabled={loading}
-                  className="flex items-center justify-center px-8 py-4 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:bg-blue-400 text-white rounded-2xl font-semibold transition-all shadow-sm whitespace-nowrap"
-                >
-                  <RefreshCw size={18} className={`mr-2 ${loading ? 'animate-spin' : ''}`} />
-                  {loading ? 'Menyegerak...' : 'Segerak Data (Sync)'}
+            </div>
+
+            <!-- Bahagian Upload -->
+            <div id="sec-upload" class="hidden p-6 md:p-8 bg-slate-50/50">
+                <label id="upload-label" for="csv-upload" class="relative flex flex-col items-center justify-center w-full h-56 border-2 border-dashed rounded-3xl cursor-pointer transition-all bg-white border-blue-200 hover:bg-blue-50/50 hover:border-blue-400">
+                    <div class="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
+                        <div id="upload-icon-container" class="p-4 rounded-full mb-4 bg-blue-100 text-blue-500">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        </div>
+                        <div id="upload-text">
+                            <p class="mb-2 text-base font-bold text-slate-700">Klik untuk muat naik fail CSV tempatan</p>
+                            <p class="text-sm text-slate-500">Sesuai digunakan jika pautan <i>live</i> menghadapi masalah.</p>
+                        </div>
+                    </div>
+                    <input id="csv-upload" type="file" multiple accept=".csv" class="hidden" onchange="handleFileUpload(event)">
+                </label>
+            </div>
+
+            <!-- Status Bar -->
+            <div id="sec-status" class="hidden bg-white border-t border-slate-200 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div class="flex items-center text-sm font-semibold text-emerald-700 bg-emerald-50 px-4 py-2 rounded-xl">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2 text-emerald-500"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+                    <span id="status-count">0 Rekod Tersedia</span>
+                    <span id="status-sync-time" class="ml-2 font-normal text-emerald-600/70"></span>
+                </div>
+                <button onclick="clearData()" class="text-sm flex items-center text-red-600 hover:text-red-700 font-semibold px-4 py-2 rounded-xl hover:bg-red-50 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    Padam Paparan
                 </button>
-              </div>
             </div>
-          ) : (
-            <div className="p-6 md:p-8 bg-slate-50/50">
-              <label 
-                htmlFor="csv-upload" 
-                className={`relative flex flex-col items-center justify-center w-full h-56 border-2 border-dashed rounded-3xl cursor-pointer transition-all ${loading ? 'bg-slate-100 border-slate-300' : 'bg-white border-blue-200 hover:bg-blue-50/50 hover:border-blue-400'}`}
-              >
-                <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
-                  <div className={`p-4 rounded-full mb-4 ${loading ? 'bg-slate-200 text-slate-400 animate-pulse' : 'bg-blue-100 text-blue-500'}`}>
-                    <Upload size={28} />
-                  </div>
-                  {loading ? (
-                    <p className="text-sm font-semibold text-slate-600">Memproses fail anda, sila tunggu...</p>
-                  ) : (
-                    <>
-                      <p className="mb-2 text-base font-bold text-slate-700">
-                        Klik untuk muat naik fail CSV tempatan
-                      </p>
-                      <p className="text-sm text-slate-500">
-                        Sesuai digunakan jika pautan *live* menghadapi masalah.
-                      </p>
-                    </>
-                  )}
-                </div>
-                <input 
-                  id="csv-upload" 
-                  type="file" 
-                  multiple 
-                  accept=".csv" 
-                  className="hidden" 
-                  onChange={handleFileUpload}
-                  disabled={loading}
-                />
-              </label>
-            </div>
-          )}
-          
-          {/* Status Bar */}
-          {filesData.length > 0 && (
-            <div className="bg-white border-t border-slate-200 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-              <div className="flex items-center text-sm font-semibold text-emerald-700 bg-emerald-50 px-4 py-2 rounded-xl">
-                <Database size={16} className="mr-2 text-emerald-500" />
-                {filesData.length} Rekod Tersedia 
-                {lastSync && <span className="ml-2 font-normal text-emerald-600/70"> (Dikemaskini: {lastSync})</span>}
-              </div>
-              <button 
-                onClick={handleClearData}
-                className="text-sm flex items-center text-red-600 hover:text-red-700 font-semibold px-4 py-2 rounded-xl hover:bg-red-50 transition-colors"
-              >
-                <Trash2 size={16} className="mr-2" />
-                Padam Paparan
-              </button>
-            </div>
-          )}
         </section>
 
-        {/* Bahagian Carian & Jadual */}
-        {filesData.length > 0 && (
-          <section className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="p-6 md:p-8 border-b border-slate-200 bg-white">
-              <div className="relative max-w-3xl mx-auto">
-                <div className="absolute inset-y-0 left-0 flex items-center pl-5 pointer-events-none">
-                  <Search className="w-5 h-5 text-slate-400" />
+        <!-- Bahagian Carian & Jadual -->
+        <section id="sec-table-container" class="hidden bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="p-6 md:p-8 border-b border-slate-200 bg-white">
+                <div class="relative max-w-3xl mx-auto">
+                    <div class="absolute inset-y-0 left-0 flex items-center pl-5 pointer-events-none">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    </div>
+                    <input type="text" id="search-input" onkeyup="filterTable()" class="block w-full p-4 pl-14 text-base text-slate-900 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none" placeholder="Cari nama item, no kad, atau lokasi...">
                 </div>
-                <input 
-                  type="text" 
-                  className="block w-full p-4 pl-14 text-base text-slate-900 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none" 
-                  placeholder="Cari nama item, no kad, atau lokasi..." 
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left">
-                <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
-                  <tr>
-                    <th scope="col" className="px-6 py-5 font-bold w-28">No. Kad</th>
-                    <th scope="col" className="px-6 py-5 font-bold">Perihal Stok (Nama Item)</th>
-                    <th scope="col" className="px-6 py-5 font-bold w-48">Lokasi Stok</th>
-                    <th scope="col" className="px-6 py-5 font-bold w-48">Sheet / Rujukan</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredData.length > 0 ? (
-                    filteredData.map((item) => (
-                      <tr key={item.id} className="hover:bg-slate-50/80 transition-colors group">
-                        <td className="px-6 py-4">
-                          <span className="inline-flex items-center justify-center px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-200/70 rounded-lg">
-                            {item.noKad}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 font-semibold text-blue-700 text-base">
-                          {item.itemName}
-                        </td>
-                        <td className="px-6 py-4 text-slate-600 font-medium">
-                          {item.lokasi}
-                        </td>
-                        <td className="px-6 py-4 text-slate-400 font-mono text-xs">
-                          {item.fileName}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="4" className="px-6 py-16 text-center">
-                        <div className="inline-flex items-center justify-center p-4 bg-slate-100 rounded-full mb-4">
-                          <AlertCircle className="w-8 h-8 text-slate-400" />
-                        </div>
-                        <p className="text-slate-600 font-medium text-lg">Tiada rekod ditemui</p>
-                        <p className="text-slate-400 mt-1">Cuba kata kunci yang lain untuk "{searchTerm}"</p>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            <div class="overflow-x-auto hide-scrollbar">
+                <table class="w-full text-sm text-left">
+                    <thead class="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
+                        <tr>
+                            <th scope="col" class="px-6 py-5 font-bold w-28 whitespace-nowrap">No. Kad</th>
+                            <th scope="col" class="px-6 py-5 font-bold">Perihal Stok (Nama Item)</th>
+                            <th scope="col" class="px-6 py-5 font-bold w-48">Lokasi Stok</th>
+                            <th scope="col" class="px-6 py-5 font-bold w-48">Sheet / Rujukan</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body" class="divide-y divide-slate-100">
+                        <!-- Data will be inserted here -->
+                    </tbody>
+                </table>
             </div>
             
-            {/* Footer Jadual */}
-            <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 text-xs font-medium text-slate-500 text-center sm:text-right">
-              Menunjukkan {filteredData.length} daripada {filesData.length} item.
+            <div class="bg-slate-50 border-t border-slate-200 px-6 py-4 text-xs font-medium text-slate-500 text-center sm:text-right" id="status-showing">
+                Menunjukkan 0 item.
             </div>
-          </section>
-        )}
+        </section>
 
-      </div>
     </div>
-  );
-}
+
+    <!-- SCRIPT LOGIK SISTEM -->
+    <script>
+        // State Management
+        let appData = [];
+        let isLoading = false;
+        let activeTab = 'script';
+
+        // Initialize App
+        window.onload = function() {
+            fetchData();
+        };
+
+        // --- Functions UI & Tabs ---
+        function switchTab(tab) {
+            activeTab = tab;
+            const tabScript = document.getElementById('tab-script');
+            const tabUpload = document.getElementById('tab-upload');
+            const secScript = document.getElementById('sec-script');
+            const secUpload = document.getElementById('sec-upload');
+
+            if (tab === 'script') {
+                tabScript.className = "flex items-center px-6 py-2.5 rounded-lg font-semibold text-sm transition-all bg-white text-blue-600 shadow-sm";
+                tabUpload.className = "flex items-center px-6 py-2.5 rounded-lg font-semibold text-sm transition-all text-slate-500 hover:text-slate-700 hover:bg-slate-200/50";
+                secScript.classList.remove('hidden');
+                secUpload.classList.add('hidden');
+            } else {
+                tabUpload.className = "flex items-center px-6 py-2.5 rounded-lg font-semibold text-sm transition-all bg-white text-blue-600 shadow-sm";
+                tabScript.className = "flex items-center px-6 py-2.5 rounded-lg font-semibold text-sm transition-all text-slate-500 hover:text-slate-700 hover:bg-slate-200/50";
+                secUpload.classList.remove('hidden');
+                secScript.classList.add('hidden');
+            }
+        }
+
+        function updateLoadingState(loading) {
+            isLoading = loading;
+            
+            // Update Script Btn
+            const btnSync = document.getElementById('btn-sync');
+            const iconSync = document.getElementById('icon-sync');
+            const textSync = document.getElementById('text-sync');
+            
+            // Update Upload UI
+            const uploadLabel = document.getElementById('upload-label');
+            const uploadIconContainer = document.getElementById('upload-icon-container');
+            const uploadText = document.getElementById('upload-text');
+            const fileInput = document.getElementById('csv-upload');
+
+            if (loading) {
+                btnSync.disabled = true;
+                btnSync.classList.add('bg-blue-400', 'cursor-not-allowed');
+                iconSync.classList.add('animate-spin');
+                textSync.innerText = "Menyegerak...";
+
+                uploadLabel.classList.add('bg-slate-100', 'border-slate-300');
+                uploadLabel.classList.remove('bg-white', 'hover:bg-blue-50/50');
+                uploadIconContainer.classList.add('bg-slate-200', 'text-slate-400', 'animate-pulse');
+                uploadIconContainer.classList.remove('bg-blue-100', 'text-blue-500');
+                uploadText.innerHTML = '<p class="text-sm font-semibold text-slate-600">Memproses fail anda, sila tunggu...</p>';
+                fileInput.disabled = true;
+            } else {
+                btnSync.disabled = false;
+                btnSync.classList.remove('bg-blue-400', 'cursor-not-allowed');
+                iconSync.classList.remove('animate-spin');
+                textSync.innerText = "Segerak Data (Sync)";
+
+                uploadLabel.classList.remove('bg-slate-100', 'border-slate-300');
+                uploadLabel.classList.add('bg-white', 'hover:bg-blue-50/50');
+                uploadIconContainer.classList.remove('bg-slate-200', 'text-slate-400', 'animate-pulse');
+                uploadIconContainer.classList.add('bg-blue-100', 'text-blue-500');
+                uploadText.innerHTML = '<p class="mb-2 text-base font-bold text-slate-700">Klik untuk muat naik fail CSV tempatan</p><p class="text-sm text-slate-500">Sesuai digunakan jika pautan <i>live</i> menghadapi masalah.</p>';
+                fileInput.disabled = false;
+                fileInput.value = ""; // Reset input
+            }
+        }
+
+        // --- Functions Modal ---
+        function showModal(type, title, message, onConfirm = null) {
+            const modal = document.getElementById('sys-modal');
+            const mHeader = document.getElementById('modal-header');
+            const mTitle = document.getElementById('modal-title');
+            const mDesc = document.getElementById('modal-desc');
+            const iInfo = document.getElementById('modal-icon-info');
+            const iError = document.getElementById('modal-icon-error');
+            const btnCancel = document.getElementById('modal-cancel');
+            const btnConfirm = document.getElementById('modal-confirm');
+
+            mTitle.innerText = title;
+            mDesc.innerHTML = message;
+
+            if (type === 'error') {
+                mHeader.className = "p-4 border-b bg-red-50 border-red-100 text-red-700 flex justify-between items-center";
+                iError.classList.remove('hidden'); iInfo.classList.add('hidden');
+                btnCancel.classList.add('hidden');
+                btnConfirm.className = "px-5 py-2 font-medium text-white rounded-xl transition-colors bg-red-600 hover:bg-red-700";
+                btnConfirm.innerText = "Tutup";
+            } else if (type === 'confirm') {
+                mHeader.className = "p-4 border-b bg-slate-50 border-slate-100 text-slate-700 flex justify-between items-center";
+                iError.classList.add('hidden'); iInfo.classList.remove('hidden');
+                btnCancel.classList.remove('hidden');
+                btnConfirm.className = "px-5 py-2 font-medium text-white rounded-xl transition-colors bg-blue-600 hover:bg-blue-700";
+                btnConfirm.innerText = "Ya, Teruskan";
+            } else {
+                mHeader.className = "p-4 border-b bg-slate-50 border-slate-100 text-slate-700 flex justify-between items-center";
+                iError.classList.add('hidden'); iInfo.classList.remove('hidden');
+                btnCancel.classList.add('hidden');
+                btnConfirm.className = "px-5 py-2 font-medium text-white rounded-xl transition-colors bg-blue-600 hover:bg-blue-700";
+                btnConfirm.innerText = "Tutup";
+            }
+
+            btnConfirm.onclick = function() {
+                if (onConfirm) onConfirm();
+                modal.classList.add('hidden');
+            };
+
+            modal.classList.remove('hidden');
+        }
+
+        function clearData() {
+            showModal('confirm', 'Pengesahan', 'Adakah anda pasti untuk memadam semua rekod dari paparan ini?', function() {
+                appData = [];
+                document.getElementById('search-input').value = "";
+                renderUI();
+            });
+        }
+
+        // --- Core Functions: Data Fetch & Parse ---
+        async function fetchData() {
+            const url = document.getElementById('input-url').value;
+            if (!url) {
+                showModal('error', 'Ralat', 'Sila masukkan pautan Apps Script.');
+                return;
+            }
+
+            updateLoadingState(true);
+            try {
+                // Bypass cache
+                const fetchUrl = url + (url.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
+                const response = await fetch(fetchUrl);
+                
+                if (!response.ok) throw new Error("Gagal menyambung ke pangkalan data.");
+                
+                const data = await response.json();
+                if (!Array.isArray(data)) throw new Error("Format data tidak disokong.");
+
+                appData = data.map((item, idx) => ({
+                    id: 'gas-' + idx,
+                    fileName: item.fileName || '-',
+                    noKad: item.noKad || '-',
+                    itemName: item.itemName || '-',
+                    lokasi: item.lokasi || '-'
+                }));
+
+                const time = new Date().toLocaleTimeString();
+                document.getElementById('status-sync-time').innerText = `(Dikemaskini: ${time})`;
+                renderUI();
+
+            } catch (error) {
+                showModal('error', 'Ralat Sambungan', 'Gagal memuat turun data. Sila pastikan pautan Apps Script adalah sah dan telah ditetapkan kepada <b>"Anyone"</b>.');
+                console.error(error);
+            }
+            updateLoadingState(false);
+        }
+
+        async function handleFileUpload(e) {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+
+            updateLoadingState(true);
+
+            const filePromises = Array.from(files).map(file => {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const text = event.target.result;
+                        const lines = text.split(/\r?\n/);
+                        
+                        let itemName = ""; let lokasi = ""; let noKad = ""; let isAsset = false;
+
+                        const clean = (str) => str.split(',').map(s => s.replace(/^"|"$/g, '').trim()).filter(s => s.length > 0).join(', ');
+
+                        for (const line of lines) {
+                            const upperLine = line.toUpperCase();
+                            if (upperLine.includes('PERIHAL STOK:')) {
+                                const perihalIdx = upperLine.indexOf('PERIHAL STOK:');
+                                const lokasiIdx = upperLine.indexOf('LOKASI STOK:');
+                                const kadIdx = upperLine.indexOf('NO. KAD:');
+
+                                if (lokasiIdx > -1 && kadIdx > -1) {
+                                    itemName = clean(line.substring(perihalIdx + 13, lokasiIdx));
+                                    lokasi = clean(line.substring(lokasiIdx + 12, kadIdx));
+                                    noKad = clean(line.substring(kadIdx + 8));
+                                } else if (lokasiIdx > -1) {
+                                    itemName = clean(line.substring(perihalIdx + 13, lokasiIdx));
+                                    lokasi = clean(line.substring(lokasiIdx + 12));
+                                } else {
+                                    itemName = clean(line.substring(perihalIdx + 13));
+                                }
+                                break; 
+                            } else if (upperLine.includes('PERIHAL ASET')) {
+                                isAsset = true;
+                                break;
+                            }
+                        }
+
+                        if (itemName || isAsset) {
+                            resolve({
+                                id: 'csv-' + Math.random().toString(36).substr(2, 9),
+                                fileName: file.name,
+                                itemName: itemName || "Senarai Aset (Rujuk Fail)",
+                                lokasi: lokasi || "-",
+                                noKad: noKad || (isAsset ? "ASET" : "-")
+                            });
+                        } else {
+                            resolve(null);
+                        }
+                    };
+                    reader.onerror = () => resolve(null);
+                    reader.readAsText(file);
+                });
+            });
+
+            const results = await Promise.all(filePromises);
+            const validResults = results.filter(r => r !== null);
+            
+            // Merge & Remove Duplicates
+            const combined = [...appData, ...validResults];
+            const uniqueMap = new Map();
+            combined.forEach(item => uniqueMap.set(item.fileName + item.noKad, item));
+            appData = Array.from(uniqueMap.values());
+
+            document.getElementById('status-sync-time').innerText = `(Fail Tempatan)`;
+            renderUI();
+            updateLoadingState(false);
+        }
+
+        // --- Rendering Logic ---
+        function renderUI() {
+            const secStatus = document.getElementById('sec-status');
+            const secTableContainer = document.getElementById('sec-table-container');
+            const statusCount = document.getElementById('status-count');
+
+            if (appData.length > 0) {
+                secStatus.classList.remove('hidden');
+                secTableContainer.classList.remove('hidden');
+                statusCount.innerText = `${appData.length} Rekod Tersedia`;
+                filterTable(); // populate table
+            } else {
+                secStatus.classList.add('hidden');
+                secTableContainer.classList.add('hidden');
+            }
+        }
+
+        function filterTable() {
+            const term = document.getElementById('search-input').value.toLowerCase();
+            const tbody = document.getElementById('table-body');
+            const statusShowing = document.getElementById('status-showing');
+
+            const filtered = appData.filter(item => 
+                item.itemName.toLowerCase().includes(term) ||
+                item.noKad.toLowerCase().includes(term) ||
+                item.lokasi.toLowerCase().includes(term) ||
+                item.fileName.toLowerCase().includes(term)
+            );
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="px-6 py-16 text-center">
+                            <div class="inline-flex items-center justify-center p-4 bg-slate-100 rounded-full mb-4">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                            </div>
+                            <p class="text-slate-600 font-medium text-lg">Tiada rekod ditemui</p>
+                            <p class="text-slate-400 mt-1">Cuba kata kunci yang lain.</p>
+                        </td>
+                    </tr>`;
+            } else {
+                tbody.innerHTML = filtered.map(item => `
+                    <tr class="hover:bg-slate-50/80 transition-colors border-b border-slate-100 group">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex items-center justify-center px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-200/70 rounded-lg">
+                                ${escapeHtml(item.noKad)}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 font-semibold text-blue-700 text-base min-w-[200px]">${escapeHtml(item.itemName)}</td>
+                        <td class="px-6 py-4 text-slate-600 font-medium">${escapeHtml(item.lokasi)}</td>
+                        <td class="px-6 py-4 text-slate-400 font-mono text-xs">${escapeHtml(item.fileName)}</td>
+                    </tr>
+                `).join('');
+            }
+
+            statusShowing.innerText = `Menunjukkan ${filtered.length} daripada ${appData.length} item.`;
+        }
+
+        // Utility to prevent XSS formatting issues
+        function escapeHtml(unsafe) {
+            if(!unsafe) return "";
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
+    </script>
+</body>
+</html>
