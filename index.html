@@ -145,15 +145,13 @@
         function cleanNoKad(kadString) {
             if (!kadString || kadString === '-') return '-';
             
-            // Format asal dari CSV selalunya seperti "1, 58" atau "1,150"
-            // Kita cuma nak nombor yang dibelakang sahaja.
-            const parts = kadString.split(',');
-            let lastPart = parts[parts.length - 1].trim();
+            // Buang perkataan 'No. Kad:' sekiranya ada
+            let cleaned = kadString.replace(/No\.?\s*Kad:?/gi, '').trim();
             
-            // Sekiranya ada teks 'No. Kad:' yang terselit, kita buang
-            lastPart = lastPart.replace(/No\.?\s*Kad:?/gi, '').trim();
+            // Buang nombor awalan (seperti "1," atau "1 ") di hadapan nombor kad sebenar
+            cleaned = cleaned.replace(/^\d+[\s,]+/, '');
             
-            return lastPart || '-';
+            return cleaned.trim() || '-';
         }
 
         // --- Teras Fetch Data dari Google Sheets ---
