@@ -85,8 +85,8 @@
             </div>
             
             <!-- Hidden input to store URL easily without breaking UI -->
-            <input type="url" id="input-url" class="hidden" value="https://script.google.com/macros/s/AKfycbzGVOc7lPomedBZVOQaVPRIo4tkeRgooWuSXPOrpWwCB55d9c_-FIcH5KrRJbz9fCXeUA/exec" readonly>
-</section>
+            <input type="url" id="input-url" class="hidden" value="https://script.google.com/macros/s/AKfycbwySh83sLjQZhpEusb-6x4TpR0CJBhmUTksEKzIXwmrWtnUpcRrkJwsIykhptZiP3lC7A/exec" readonly>
+        </section>
 
         <!-- Bahagian Jadual Data -->
         <section id="sec-table-container" class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
@@ -101,7 +101,6 @@
                         </tr>
                     </thead>
                     <tbody id="table-body" class="divide-y divide-slate-100">
-                        <!-- Data will be inserted here -->
                         <tr>
                             <td colspan="4" class="px-6 py-12 text-center text-slate-400">
                                 Memuatkan data...
@@ -120,14 +119,13 @@
 
     <!-- SCRIPT LOGIK SISTEM -->
     <script>
-        // PAUTAN APPS SCRIPT YANG BARU DITANAM DI SINI
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzGVOc7lPomedBZVOQaVPRIo4tkeRgooWuSXPOrpWwCB55d9c_-FIcH5KrRJbz9fCXeUA/exec';
+        // PAUTAN APPS SCRIPT LATEST
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwySh83sLjQZhpEusb-6x4TpR0CJBhmUTksEKzIXwmrWtnUpcRrkJwsIykhptZiP3lC7A/exec';
         
         let appData = [];
 
         // Dijalankan sebaik sahaja laman web dibuka
         window.onload = function() {
-            // Cuba baca data dari "Cache" supaya paparan serta merta (tidak lambat)
             const cachedData = localStorage.getItem('kadStokData');
             const cachedTime = localStorage.getItem('kadStokSyncTime');
 
@@ -135,43 +133,31 @@
                 appData = JSON.parse(cachedData);
                 document.getElementById('status-sync-time').innerText = `Kemas kini terakhir: ${cachedTime}`;
                 renderUI();
-                
-                // Secara senyap (background), sistem akan semak jika ada data baru
                 fetchData(true); 
             } else {
-                // Jika pertama kali buka, loading seperti biasa
                 fetchData(false);
             }
         };
 
-        // --- Fungsi Untuk Format Nombor Kad Dengan Tepat ---
         function cleanNoKad(kadString) {
             if (!kadString || kadString === '-') return '-';
             
-            // Buang perkataan 'No. Kad:' sekiranya ada
             let cleaned = kadString.replace(/No\.?\s*Kad:?/gi, '').trim();
-            
-            // Membuang nombor lajur yang tidak berkaitan seperti "1, 58" atau "1 58" menjadi "58"
             cleaned = cleaned.replace(/^\d+\s*[,\|]\s*/, ''); 
             cleaned = cleaned.replace(/^\d+\s+/, ''); 
             
             return cleaned.trim() || '-';
         }
 
-        // --- Fungsi Untuk Format Lokasi Supaya Papar Satu Sahaja ---
         function cleanLokasi(locString) {
             if (!locString || locString === '-') return '-';
             
-            // Pecahkan lokasi yang dipisahkan oleh koma
             const parts = locString.split(',');
-            
-            // Ambil bahagian yang terakhir sahaja (Cth: "PEJABAT, STOR SUKAN" akan jadi "STOR SUKAN")
             let lastPart = parts[parts.length - 1].trim();
             
             return lastPart || '-';
         }
 
-        // --- Teras Fetch Data dari Google Sheets ---
         async function fetchData(isBackground = false) {
             const btnSync = document.getElementById('btn-sync');
             const iconSync = document.getElementById('icon-sync');
@@ -187,7 +173,6 @@
             }
 
             try {
-                // Bypass cache internet pelayar
                 const fetchUrl = SCRIPT_URL + '?t=' + new Date().getTime();
                 const response = await fetch(fetchUrl);
                 
@@ -199,15 +184,14 @@
                 appData = data.map((item, idx) => ({
                     id: 'gas-' + idx,
                     fileName: item.fileName || '-',
-                    noKad: cleanNoKad(item.noKad), // Format nombor diaplikasikan di sini
+                    noKad: cleanNoKad(item.noKad),
                     itemName: item.itemName || '-',
-                    lokasi: cleanLokasi(item.lokasi) // Format lokasi (1 lokasi) diaplikasikan di sini
+                    lokasi: cleanLokasi(item.lokasi)
                 }));
 
                 const timeStr = new Date().toLocaleTimeString();
                 document.getElementById('status-sync-time').innerText = `Kemas kini terkini: ${timeStr}`;
                 
-                // Simpan ke dalam Cache (Local Storage) untuk kegunaan pembukaan seterusnya
                 localStorage.setItem('kadStokData', JSON.stringify(appData));
                 localStorage.setItem('kadStokSyncTime', timeStr);
 
@@ -220,7 +204,6 @@
                 console.error(error);
             }
 
-            // Kembalikan UI butang ke asal
             if (!isBackground) {
                 btnSync.disabled = false;
                 iconSync.classList.remove('spinner');
@@ -230,11 +213,10 @@
             }
         }
 
-        // --- Fungsi Render & Carian UI ---
         function renderUI() {
             const statusCount = document.getElementById('status-count');
             statusCount.innerText = `${appData.length} Rekod`;
-            filterTable(); // Papar data ke dalam jadual
+            filterTable();
         }
 
         function filterTable() {
@@ -278,9 +260,8 @@
             statusShowing.innerText = `Menunjukkan ${filtered.length} daripada ${appData.length} item keseluruhan.`;
         }
 
-        // Fungsi Keselamatan & Modal
         function escapeHtml(unsafe) {
-            if(!unsafe) return "";
+            if (!unsafe) return "";
             return unsafe
                  .replace(/&/g, "&amp;")
                  .replace(/</g, "&lt;")
@@ -295,7 +276,6 @@
             mDesc.innerHTML = message;
             modal.classList.remove('hidden');
         }
-
     </script>
 </body>
 </html>
